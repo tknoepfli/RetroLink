@@ -92,7 +92,8 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
             </div>
           </div>
 
-          {/* 2. ROM Loader */}
+          {/* 2. ROM Loader - Hidden for Guest */}
+          {isHost && (
           <div className="space-y-2">
             <label className="text-sm font-semibold text-zinc-400">Game ROM</label>
             <label className={`group flex flex-col items-center justify-center w-full h-28 border-2 border-dashed rounded-lg transition-all relative overflow-hidden ${!isHost ? 'opacity-50 cursor-not-allowed border-zinc-700' : 'cursor-pointer border-zinc-700 hover:border-indigo-500 hover:bg-zinc-800/50'}`}>
@@ -101,27 +102,23 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                     <p className="text-xs text-zinc-300 font-medium px-2 text-center truncate w-full">
                         {romName ? romName : "Load ROM File"}
                     </p>
-                    {isHost ? (
-                        <span className="mt-2 text-[10px] text-zinc-500 uppercase tracking-wide bg-zinc-900/50 px-2 py-1 rounded">
-                            Click to Upload
-                        </span>
-                    ) : (
-                        <span className="mt-2 text-[10px] text-zinc-500">Waiting for Host...</span>
-                    )}
+                    <span className="mt-2 text-[10px] text-zinc-500 uppercase tracking-wide bg-zinc-900/50 px-2 py-1 rounded">
+                        Click to Upload
+                    </span>
                 </div>
-                {isHost && (
-                    <input 
-                        type="file" 
-                        className="hidden" 
-                        onChange={(e) => e.target.files && e.target.files[0] && onRomSelect(e.target.files[0])}
-                        accept={ALL_EXTENSIONS} 
-                    />
-                )}
+                <input 
+                    type="file" 
+                    className="hidden" 
+                    onChange={(e) => e.target.files && e.target.files[0] && onRomSelect(e.target.files[0])}
+                    accept={ALL_EXTENSIONS} 
+                />
                 {romName && <div className="absolute bottom-0 left-0 h-1 bg-indigo-500 w-full shadow-[0_0_10px_rgba(99,102,241,0.5)]"></div>}
             </label>
           </div>
+          )}
 
-          {/* 3. Game State Controls */}
+          {/* 3. Game State Controls - Hidden for Guest */}
+          {isHost && (
           <div className="space-y-3">
             <label className="text-sm font-semibold text-zinc-400">Game State</label>
             
@@ -150,6 +147,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
               <i className="ph ph-power"></i> Power Off Console
             </button>
           </div>
+          )}
 
           {/* 4. Display Options (CRT Filter) */}
           <div className="space-y-2">

@@ -215,6 +215,7 @@ const App: React.FC = () => {
     resumeAudio(); 
     setIsConnecting(true);
     setRole(ConnectionRole.HOST);
+    setIsSettingsOpen(true);
     initPeer();
   };
 
