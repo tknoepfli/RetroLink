@@ -1,0 +1,7 @@
+{
+  "name": "RetroLink",
+  "description": "A modern, peer-to-peer web emulator allowing two players to play together seamlessly via WebRTC.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
