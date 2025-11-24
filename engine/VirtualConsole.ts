@@ -66,10 +66,11 @@ export class VirtualConsole {
       try {
         // @ts-ignore
         const module = await import('nostalgist');
+        const lib = module as any;
         // Handle various ESM export shapes
-        if (module.default) return module.default;
-        if (module.Nostalgist) return module.Nostalgist;
-        return module;
+        if (lib.default) return lib.default;
+        if (lib.Nostalgist) return lib.Nostalgist;
+        return lib;
       } catch (e) {
         console.error("Failed to import Nostalgist:", e);
         throw new Error("Nostalgist library unavailable.");

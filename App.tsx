@@ -75,9 +75,7 @@ const App: React.FC = () => {
     window.addEventListener("gamepaddisconnected", checkGamepad);
     
     // Initial check
-    if (typeof navigator !== 'undefined' && navigator.getGamepads) {
-        checkGamepad();
-    }
+    checkGamepad();
 
     return () => {
         window.removeEventListener("gamepadconnected", checkGamepad);
