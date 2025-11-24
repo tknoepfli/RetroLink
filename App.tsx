@@ -430,6 +430,12 @@ const App: React.FC = () => {
       showNotification("Session ID Copied!");
   };
 
+  const copyLink = () => {
+      const url = `${window.location.origin}${window.location.pathname}?join=${myId}`;
+      navigator.clipboard.writeText(url);
+      showNotification("Join Link Copied!");
+  };
+
   // --- Render ---
 
   if (role === ConnectionRole.NONE) {
@@ -462,6 +468,10 @@ const App: React.FC = () => {
                         <span className="text-xs text-zinc-400 font-mono truncate">{myId || 'Generating...'}</span>
                         <button onClick={copyId} className="p-1.5 hover:bg-zinc-700 rounded-full text-zinc-300 transition-colors flex-shrink-0" title="Copy ID">
                             <i className="ph ph-copy"></i>
+                        </button>
+                        <div className="w-px h-3 bg-zinc-700 mx-0.5"></div>
+                        <button onClick={copyLink} className="p-1.5 hover:bg-zinc-700 rounded-full text-zinc-300 transition-colors flex-shrink-0" title="Copy Join Link">
+                            <i className="ph ph-link"></i>
                         </button>
                     </div>
                 )}

@@ -70,21 +70,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
       {/* Scrollable Content */}
       <div className="flex-1 overflow-y-auto p-6 pt-2 space-y-6">
           
-          {/* Display Options */}
-          <div className="space-y-2">
-              <label className="text-sm font-semibold text-zinc-400">Display</label>
-              <div className="flex items-center justify-between bg-zinc-800 p-3 rounded-lg">
-                  <span className="text-sm text-zinc-300">CRT Filter</span>
-                  <button 
-                    onClick={() => onToggleCRT(!enableCRT)}
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${enableCRT ? 'bg-indigo-600' : 'bg-zinc-700'}`}
-                  >
-                      <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${enableCRT ? 'translate-x-6' : 'translate-x-1'}`} />
-                  </button>
-              </div>
-          </div>
-
-          {/* Supported Systems Grid (Visual Only) */}
+          {/* 1. Supported Systems Grid (Visual Only) */}
           <div className="space-y-2">
             <div className="flex justify-between items-end">
                 <label className="text-sm font-semibold text-zinc-400">Supported Systems</label>
@@ -106,7 +92,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
             </div>
           </div>
 
-          {/* ROM Loader */}
+          {/* 2. ROM Loader */}
           <div className="space-y-2">
             <label className="text-sm font-semibold text-zinc-400">Game ROM</label>
             <label className={`group flex flex-col items-center justify-center w-full h-28 border-2 border-dashed rounded-lg transition-all relative overflow-hidden ${!isHost ? 'opacity-50 cursor-not-allowed border-zinc-700' : 'cursor-pointer border-zinc-700 hover:border-indigo-500 hover:bg-zinc-800/50'}`}>
@@ -135,26 +121,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
             </label>
           </div>
 
-          <hr className="border-zinc-800" />
-
-          {/* Volume */}
-          <div className="space-y-2">
-            <div className="flex justify-between items-center">
-              <label className="text-sm font-semibold text-zinc-400">Master Volume</label>
-              <span className="text-xs text-zinc-500">{Math.round(volume * 100)}%</span>
-            </div>
-            <input 
-              type="range" 
-              min="0" 
-              max="1" 
-              step="0.05"
-              value={volume}
-              onChange={(e) => onVolumeChange(parseFloat(e.target.value))}
-              className="w-full h-2 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-indigo-500"
-            />
-          </div>
-
-          {/* Game State Controls */}
+          {/* 3. Game State Controls */}
           <div className="space-y-3">
             <label className="text-sm font-semibold text-zinc-400">Game State</label>
             
@@ -184,7 +151,40 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
             </button>
           </div>
 
-          {/* Instructions */}
+          {/* 4. Display Options (CRT Filter) */}
+          <div className="space-y-2">
+              <label className="text-sm font-semibold text-zinc-400">Display</label>
+              <div className="flex items-center justify-between bg-zinc-800 p-3 rounded-lg">
+                  <span className="text-sm text-zinc-300">CRT Filter</span>
+                  <button 
+                    onClick={() => onToggleCRT(!enableCRT)}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${enableCRT ? 'bg-indigo-600' : 'bg-zinc-700'}`}
+                  >
+                      <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${enableCRT ? 'translate-x-6' : 'translate-x-1'}`} />
+                  </button>
+              </div>
+          </div>
+
+          <hr className="border-zinc-800" />
+
+          {/* 5. Volume */}
+          <div className="space-y-2">
+            <div className="flex justify-between items-center">
+              <label className="text-sm font-semibold text-zinc-400">Master Volume</label>
+              <span className="text-xs text-zinc-500">{Math.round(volume * 100)}%</span>
+            </div>
+            <input 
+              type="range" 
+              min="0" 
+              max="1" 
+              step="0.05"
+              value={volume}
+              onChange={(e) => onVolumeChange(parseFloat(e.target.value))}
+              className="w-full h-2 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+            />
+          </div>
+
+          {/* 6. Instructions */}
           <div className="mt-4 bg-zinc-800/30 p-4 rounded-lg border border-zinc-800">
             <h3 className="text-xs font-bold text-zinc-400 mb-2 uppercase tracking-wider">Controls</h3>
             <div className="grid grid-cols-2 gap-y-1 text-xs text-zinc-500 font-mono">

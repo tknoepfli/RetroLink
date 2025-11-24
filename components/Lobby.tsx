@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 interface LobbyProps {
   onCreate: () => void;
@@ -8,6 +8,14 @@ interface LobbyProps {
 
 export const Lobby: React.FC<LobbyProps> = ({ onCreate, onJoin, isConnecting }) => {
   const [joinId, setJoinId] = useState('');
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const joinParam = params.get('join');
+    if (joinParam) {
+        setJoinId(joinParam);
+    }
+  }, []);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-zinc-950 p-4 lg:p-8 relative overflow-hidden">
