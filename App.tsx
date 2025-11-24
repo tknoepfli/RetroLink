@@ -30,6 +30,7 @@ const App: React.FC = () => {
   const [notification, setNotification] = useState<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [enableCRT, setEnableCRT] = useState(false);
+  const [isGamepadConnected, setIsGamepadConnected] = useState(false);
   
   // Refs for stable access in gameLoop without triggering re-renders/re-creation
   const roleRef = useRef(role);
@@ -60,6 +61,28 @@ const App: React.FC = () => {
     guestVideoRef.current.autoplay = true;
     guestVideoRef.current.muted = true; 
     guestVideoRef.current.playsInline = true;
+  }, []);
+
+  // Monitor Gamepad Connection
+  useEffect(() => {
+    const checkGamepad = () => {
+        const gps = navigator.getGamepads ? navigator.getGamepads() : [];
+        const hasGamepad = Array.from(gps).some(gp => gp !== null);
+        setIsGamepadConnected(hasGamepad);
+    };
+
+    window.addEventListener("gamepadconnected", checkGamepad);
+    window.addEventListener("gamepaddisconnected", checkGamepad);
+    
+    // Initial check
+    if (typeof navigator !== 'undefined' && navigator.getGamepads) {
+        checkGamepad();
+    }
+
+    return () => {
+        window.removeEventListener("gamepadconnected", checkGamepad);
+        window.removeEventListener("gamepaddisconnected", checkGamepad);
+    };
   }, []);
 
   const resumeAudio = useCallback(async () => {
@@ -415,6 +438,12 @@ const App: React.FC = () => {
     return <Lobby onCreate={createSession} onJoin={joinSession} isConnecting={isConnecting} />;
   }
 
+  // Helper to determine player indicator status
+  // P1 active if Host + Gamepad, or if Guest + Connected to Host (Host is P1)
+  const p1Connected = role === ConnectionRole.HOST ? isGamepadConnected : !!connRef.current;
+  // P2 active if Host + Connected to Guest, or if Guest + Gamepad (Guest is P2)
+  const p2Connected = role === ConnectionRole.HOST ? !!connRef.current : isGamepadConnected;
+
   return (
     <div className="flex flex-col h-screen bg-zinc-950 text-white overflow-hidden">
         {/* Header */}
@@ -441,7 +470,7 @@ const App: React.FC = () => {
                 
                 <div className={`hidden sm:flex px-3 py-1 rounded-full text-xs font-medium items-center gap-1.5 ${connRef.current ? 'bg-emerald-900/30 text-emerald-400 border border-emerald-900/50' : 'bg-yellow-900/30 text-yellow-400 border border-yellow-900/50'}`}>
                     <div className={`w-1.5 h-1.5 rounded-full ${connRef.current ? 'bg-emerald-400 animate-pulse' : 'bg-yellow-400'}`}></div>
-                    {connRef.current ? 'P2 CONNECTED' : 'WAITING P2'}
+                    {connRef.current ? 'P2 CONNECTED' : 'WAITING FOR P2'}
                 </div>
 
                  {/* Settings Toggle (Visible on all screens now) */}
@@ -479,8 +508,12 @@ const App: React.FC = () => {
                    <div className="mt-4 flex justify-between items-center text-zinc-500 text-xs font-mono">
                        <span>CORE: {platform}</span>
                        <div className="flex gap-4">
-                           <span className="flex items-center gap-1"><i className="ph ph-game-controller"></i> {role === ConnectionRole.HOST ? 'P1' : 'P1 (HOST)'}</span>
-                           <span className={`flex items-center gap-1 ${connRef.current ? 'text-zinc-300' : 'text-zinc-600'}`}><i className="ph ph-game-controller"></i> {role === ConnectionRole.HOST ? 'P2 (GUEST)' : 'P2'}</span>
+                           <span className={`flex items-center gap-1 ${p1Connected ? 'text-emerald-400' : 'text-zinc-600'}`}>
+                               <i className="ph ph-game-controller"></i> {role === ConnectionRole.HOST ? 'P1' : 'P1 (HOST)'}
+                           </span>
+                           <span className={`flex items-center gap-1 ${p2Connected ? 'text-emerald-400' : 'text-zinc-600'}`}>
+                               <i className="ph ph-game-controller"></i> {role === ConnectionRole.HOST ? 'P2 (GUEST)' : 'P2'}
+                           </span>
                        </div>
                    </div>
                 </div>

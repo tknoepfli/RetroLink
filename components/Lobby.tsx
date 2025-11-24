@@ -67,7 +67,7 @@ export const Lobby: React.FC<LobbyProps> = ({ onCreate, onJoin, isConnecting }) 
 
           <div className="mt-8 text-center">
             <p className="text-xs text-zinc-600">
-                Supported: NES • SNES • GB • GBA • Genesis
+                Supported: NES • SNES • GB • GBA • Genesis • PSX
             </p>
           </div>
         </div>
