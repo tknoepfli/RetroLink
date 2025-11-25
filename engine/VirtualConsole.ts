@@ -2,6 +2,25 @@ import { GameState, PlayerState, ControllerInput, Platform } from '../types';
 import { AudioService } from '../services/audioService';
 
 /**
+ * Key Mapping Configuration for Player 2.
+ * We map P2 inputs to specific keyboard keys that don't conflict with P1 (WASD/Arrows).
+ */
+const P2_MAPPING: Record<string, { key: string, code: string, keyCode: number, retroarchKey: string }> = {
+    up: { key: 'i', code: 'KeyI', keyCode: 73, retroarchKey: 'i' },
+    down: { key: 'k', code: 'KeyK', keyCode: 75, retroarchKey: 'k' },
+    left: { key: 'j', code: 'KeyJ', keyCode: 74, retroarchKey: 'j' },
+    right: { key: 'l', code: 'KeyL', keyCode: 76, retroarchKey: 'l' },
+    a: { key: 'm', code: 'KeyM', keyCode: 77, retroarchKey: 'm' },      // SNES A (Right)
+    b: { key: 'n', code: 'KeyN', keyCode: 78, retroarchKey: 'n' },      // SNES B (Bottom)
+    x: { key: 'b', code: 'KeyB', keyCode: 66, retroarchKey: 'b' },      // SNES X (Top)
+    y: { key: 'v', code: 'KeyV', keyCode: 86, retroarchKey: 'v' },      // SNES Y (Left)
+    start: { key: 'p', code: 'KeyP', keyCode: 80, retroarchKey: 'p' },
+    select: { key: 'o', code: 'KeyO', keyCode: 79, retroarchKey: 'o' },
+    l: { key: '9', code: 'Digit9', keyCode: 57, retroarchKey: '9' },
+    r: { key: '0', code: 'Digit0', keyCode: 48, retroarchKey: '0' },
+};
+
+/**
  * Manages the emulation lifecycle using Nostalgist.js.
  * Handles ROM loading, core switching, and input bridging.
  */
@@ -26,13 +45,12 @@ export class VirtualConsole {
   
   // Remote Input Handling
   public static instance: VirtualConsole | null = null;
-  private guestInput: ControllerInput | null = null;
-  private hasConnectedGuest: boolean = false;
+  private lastGuestInput: ControllerInput | null = null;
 
   // Simulation constants
-  // doubled resolution for better stream quality
-  private width = 1280; 
-  private height = 960;
+  // Standard resolution for best latency/performance balance
+  private width = 640; 
+  private height = 480;
 
   constructor(container: HTMLDivElement, isHost: boolean, audio: AudioService) {
     VirtualConsole.instance = this;
@@ -56,9 +74,6 @@ export class VirtualConsole {
 
     // Ensure we start clean
     this.staticCanvas.style.display = 'block';
-
-    // Patch Gamepad API to support remote P2
-    this.patchGamepadAPI();
     
     // Initial State (used for fallback/waiting screen)
     this.state = {
@@ -71,137 +86,66 @@ export class VirtualConsole {
 
   /**
    * Updates the virtual input state for the remote player (Guest).
-   * This is used by the Host to feed P2 inputs into the emulator.
+   * This uses synthetic keyboard events to control Player 2.
    */
   public updateGuestInput(input: ControllerInput) {
-      this.guestInput = input;
+      if (!this.lastGuestInput) {
+          this.lastGuestInput = this.createEmptyInput();
+      }
+
+      // Compare current input with last frame's input
+      // If changed, dispatch the corresponding KeyDown or KeyUp event
+      this.handleButtonChange(input.up, this.lastGuestInput.up, P2_MAPPING.up);
+      this.handleButtonChange(input.down, this.lastGuestInput.down, P2_MAPPING.down);
+      this.handleButtonChange(input.left, this.lastGuestInput.left, P2_MAPPING.left);
+      this.handleButtonChange(input.right, this.lastGuestInput.right, P2_MAPPING.right);
       
-      // Fire connection event ONCE when we first receive data.
-      // Emulators often need this event to start polling.
-      if (!this.hasConnectedGuest) {
-          this.hasConnectedGuest = true;
-          this.triggerGamepadEvent();
+      this.handleButtonChange(input.a, this.lastGuestInput.a, P2_MAPPING.a);
+      this.handleButtonChange(input.b, this.lastGuestInput.b, P2_MAPPING.b);
+      this.handleButtonChange(input.x, this.lastGuestInput.x, P2_MAPPING.x);
+      this.handleButtonChange(input.y, this.lastGuestInput.y, P2_MAPPING.y);
+      
+      this.handleButtonChange(input.start, this.lastGuestInput.start, P2_MAPPING.start);
+      this.handleButtonChange(input.select, this.lastGuestInput.select, P2_MAPPING.select);
+      this.handleButtonChange(input.l, this.lastGuestInput.l, P2_MAPPING.l);
+      this.handleButtonChange(input.r, this.lastGuestInput.r, P2_MAPPING.r);
+
+      this.lastGuestInput = { ...input };
+  }
+
+  private handleButtonChange(current: boolean | undefined, last: boolean | undefined, map: any) {
+      const isPressed = !!current;
+      const wasPressed = !!last;
+
+      if (isPressed !== wasPressed) {
+          const type = isPressed ? 'keydown' : 'keyup';
+          this.dispatchKey(type, map);
       }
   }
 
-  /**
-   * Manually dispatches a 'gamepadconnected' event to wake up the emulator's input driver.
-   */
-  private triggerGamepadEvent() {
-      if (typeof window === 'undefined' || typeof GamepadEvent === 'undefined') return;
+  private dispatchKey(type: 'keydown' | 'keyup', map: { key: string, code: string, keyCode: number }) {
+      if (typeof window === 'undefined') return;
       
-      console.log("Dispatching virtual gamepad connection event for Player 2");
+      // Construct a robust KeyboardEvent that satisfies legacy and modern listeners
+      const event = new KeyboardEvent(type, {
+          key: map.key,
+          code: map.code,
+          keyCode: map.keyCode, 
+          which: map.keyCode,
+          bubbles: true,
+          cancelable: true,
+          view: window
+      });
       
-      // Create a snapshot of the virtual gamepad
-      const gp = this.createVirtualGamepad(this.guestInput || this.createEmptyInput());
-      
-      try {
-        const event = new GamepadEvent('gamepadconnected', {
-            gamepad: gp
-        });
-        window.dispatchEvent(event);
-      } catch (e) {
-        console.warn("Could not dispatch GamepadEvent", e);
-      }
+      // Explicitly define legacy properties for Emscripten/SDL compatibility
+      Object.defineProperty(event, 'keyCode', { value: map.keyCode });
+      Object.defineProperty(event, 'which', { value: map.keyCode });
+
+      window.dispatchEvent(event);
   }
 
   private createEmptyInput(): ControllerInput {
-      return { up: false, down: false, left: false, right: false, a: false, b: false, start: false, select: false };
-  }
-
-  /**
-   * Monkey-patches navigator.getGamepads to inject a virtual controller for Player 2.
-   * Emulators typically poll this API every frame.
-   */
-  private patchGamepadAPI() {
-    if (typeof navigator === 'undefined') return;
-    if ((navigator as any).__gamepadsPatched) return;
-
-    const originalGetGamepads = navigator.getGamepads.bind(navigator);
-    (navigator as any).__gamepadsPatched = true;
-
-    // We replace the global function, but it needs to access the *current* VirtualConsole instance
-    // to get the latest guestInput.
-    navigator.getGamepads = () => {
-        const gamepads = originalGetGamepads();
-        const instance = VirtualConsole.instance;
-
-        // Only intervene if we are Host and have a connected guest
-        if (instance && instance.isHost && instance.hasConnectedGuest && instance.guestInput) {
-            // Convert GamepadList to Array
-            const list: any[] = Array.from(gamepads);
-            
-            // LOGIC: Ensure P2 is always at Index 1.
-            
-            // If Index 0 is empty (Host has no physical gamepad), we MUST inject a dummy 
-            // controller at Index 0. Otherwise, RetroArch will see our Virtual P2 (at Index 1) 
-            // as the "First Available Controller" and assign it to Player 1.
-            if (!list[0]) {
-                list[0] = {
-                    id: 'RetroLink Dummy Host Controller',
-                    index: 0,
-                    connected: true,
-                    timestamp: performance.now(),
-                    mapping: 'standard',
-                    axes: [0, 0, 0, 0],
-                    buttons: Array(17).fill({ pressed: false, value: 0 })
-                };
-            }
-
-            // Ensure slot 1 exists
-            if (list.length < 2) list.push(null);
-
-            // Inject Guest Input at Index 1 (Player 2)
-            list[1] = instance.createVirtualGamepad(instance.guestInput);
-            
-            return list;
-        }
-
-        return gamepads;
-    };
-  }
-
-  private createVirtualGamepad(input: ControllerInput): any {
-    // Map ControllerInput to Standard Gamepad Layout
-    // 0:B, 1:A, 2:Y, 3:X, 4:L, 5:R, 8:Sel, 9:Sta, 12:Up, 13:Dn, 14:Lf, 15:Rt
-    
-    // Create Buttons
-    const buttons = [
-        { pressed: input.b, value: input.b ? 1 : 0 },       // 0 (Bottom) -> SNES B
-        { pressed: input.a, value: input.a ? 1 : 0 },       // 1 (Right)  -> SNES A
-        { pressed: input.y || false, value: input.y ? 1 : 0 }, // 2 (Left)   -> SNES Y
-        { pressed: input.x || false, value: input.x ? 1 : 0 }, // 3 (Top)    -> SNES X
-        { pressed: input.l || false, value: input.l ? 1 : 0 }, // 4 (LB)     -> SNES L
-        { pressed: input.r || false, value: input.r ? 1 : 0 }, // 5 (RB)     -> SNES R
-        { pressed: false, value: 0 }, // 6 (LT)
-        { pressed: false, value: 0 }, // 7 (RT)
-        { pressed: input.select, value: input.select ? 1 : 0 }, // 8 (Select)
-        { pressed: input.start, value: input.start ? 1 : 0 },   // 9 (Start)
-        { pressed: false, value: 0 }, // 10 (L3)
-        { pressed: false, value: 0 }, // 11 (R3)
-        { pressed: input.up, value: input.up ? 1 : 0 },       // 12 (D-Up)
-        { pressed: input.down, value: input.down ? 1 : 0 },   // 13 (D-Down)
-        { pressed: input.left, value: input.left ? 1 : 0 },   // 14 (D-Left)
-        { pressed: input.right, value: input.right ? 1 : 0 }, // 15 (D-Right)
-        { pressed: false, value: 0 }, // 16 (Home)
-    ];
-
-    // Create Axes (Standard: 0=Left/Right, 1=Up/Down)
-    const axes = [0, 0, 0, 0];
-    if (input.left) axes[0] = -1;
-    if (input.right) axes[0] = 1;
-    if (input.up) axes[1] = -1;
-    if (input.down) axes[1] = 1;
-
-    return {
-        id: 'RetroLink Virtual Controller P2',
-        index: 1, // Strictly Player 2
-        connected: true,
-        timestamp: performance.now(), // High-res timestamp is crucial for polling
-        mapping: 'standard',
-        axes: axes,
-        buttons: buttons
-    };
+      return { up: false, down: false, left: false, right: false, a: false, b: false, x: false, y: false, l: false, r: false, start: false, select: false };
   }
 
   /**
@@ -271,7 +215,6 @@ export class VirtualConsole {
         });
 
         // Create a dedicated CANVAS for the emulator.
-        // Nostalgist/RetroArch strictly requires a canvas element target.
         const canvas = document.createElement('canvas');
         const canvasId = `emu-canvas-${Date.now()}`;
         canvas.id = canvasId;
@@ -287,50 +230,58 @@ export class VirtualConsole {
              throw new Error("Canvas element failed to attach to DOM");
         }
 
+        // Build RetroArch config for P2 Mapping
+        const retroarchConfig: Record<string, string> = {
+            // Map Player 2 buttons to our specific keys
+            input_player2_up: P2_MAPPING.up.retroarchKey,
+            input_player2_down: P2_MAPPING.down.retroarchKey,
+            input_player2_left: P2_MAPPING.left.retroarchKey,
+            input_player2_right: P2_MAPPING.right.retroarchKey,
+            input_player2_a: P2_MAPPING.a.retroarchKey,
+            input_player2_b: P2_MAPPING.b.retroarchKey,
+            input_player2_x: P2_MAPPING.x.retroarchKey,
+            input_player2_y: P2_MAPPING.y.retroarchKey,
+            input_player2_start: P2_MAPPING.start.retroarchKey,
+            input_player2_select: P2_MAPPING.select.retroarchKey,
+            input_player2_l: P2_MAPPING.l.retroarchKey,
+            input_player2_r: P2_MAPPING.r.retroarchKey,
+            
+            // Ensure Keyboard driver is active
+            input_driver: 'sdl2', 
+        };
+
         // 3. Launch Nostalgist
-        // Pass the CANVAS selector ID string
         this.nostalgist = await Nostalgist.launch({
             element: `#${canvasId}`,
             rom: file,
             core: core,
+            retroarchConfig: retroarchConfig,
             style: {
                 width: '100%',
                 height: '100%',
                 backgroundColor: 'transparent',
             },
-            respondToGlobalEvents: true, // Listen to keyboard inputs
+            respondToGlobalEvents: true, // Listen to keyboard inputs (both real P1 and synthetic P2)
         });
 
         if (this.isDestroyed) {
-            // If we got destroyed while launching, exit immediately
             await this.nostalgist.exit();
             this.nostalgist = null;
             return;
         }
 
         this.isRomLoaded = true;
-        
-        // Hide static screen while playing
         this.staticCanvas.style.display = 'none';
-        console.log("Emulator Launched Successfully");
-        
-        // Re-trigger gamepad event if P2 was already waiting
-        if (this.hasConnectedGuest) {
-            this.triggerGamepadEvent();
-        }
+        console.log("Emulator Launched Successfully with P2 Keyboard Mapping");
 
     } catch (e) {
       console.error("Failed to launch emulator:", e);
       this.isRomLoaded = false;
       this.romName = "Error Loading ROM";
       
-      // Cleanup failed launch artifacts
       await this.destroyEmulator();
       
-      // Force static screen back
       this.staticCanvas.style.display = 'block';
-
-      // Re-throw to inform UI
       throw e; 
     } finally {
         this.isLaunching = false;
@@ -349,35 +300,25 @@ export class VirtualConsole {
     await this.destroyEmulator();
   }
 
-  /**
-   * Stops the emulator and unloads the ROM, returning to static screen.
-   */
   public async stop() {
     this.isRomLoaded = false;
     this.romName = "No Cartridge Inserted";
-    this.guestInput = null; // Clear inputs
-    this.hasConnectedGuest = false;
+    this.lastGuestInput = null;
     await this.destroyEmulator();
-    this.render(); // Ensure static screen is drawn immediately
+    this.render(); 
   }
 
-  /**
-   * Captures the current state of the emulator as a Blob.
-   */
   public async saveState(): Promise<Blob | null> {
     if (!this.nostalgist || !this.isRomLoaded) return null;
     try {
         const state = await this.nostalgist.saveState();
-        return state.blob; // Nostalgist returns { blob: Blob, thumbnail: Blob } or just Blob depending on version, checking docs standard is blob
+        return state.blob;
     } catch (e) {
         console.error("Failed to save state:", e);
         return null;
     }
   }
 
-  /**
-   * Loads a state blob into the running emulator.
-   */
   public async loadState(stateBlob: Blob) {
       if (!this.nostalgist || !this.isRomLoaded) return;
       try {
@@ -389,7 +330,6 @@ export class VirtualConsole {
   }
 
   private async destroyEmulator() {
-    // 1. Exit Nostalgist instance
     if (this.nostalgist) {
         try {
             await this.nostalgist.exit();
@@ -399,38 +339,28 @@ export class VirtualConsole {
         this.nostalgist = null;
     }
     
-    // 2. Remove the wrapper we created
     if (this.wrapper) {
         this.wrapper.remove();
         this.wrapper = null;
     }
 
-    // 3. Cleanup any potential orphaned wrappers from previous crashes
     if (this.container) {
         const orphans = this.container.querySelectorAll('.emulator-wrapper');
         orphans.forEach(el => el.remove());
     }
 
-    // 4. Restore static screen
     if (this.staticCanvas) {
         this.staticCanvas.style.display = 'block';
     }
   }
 
-  /**
-   * Returns a MediaStream from the active canvas.
-   * Defaulted to 60fps for smoother gaming.
-   */
   public captureStream(fps: number = 60): MediaStream {
-      // If Nostalgist is running, find its canvas within our wrapper
       if (this.isRomLoaded && this.nostalgist && this.wrapper) {
           const emuCanvas = this.wrapper.querySelector('canvas') as HTMLCanvasElement;
           if (emuCanvas) {
               return emuCanvas.captureStream(fps);
           }
       }
-      
-      // Fallback to static canvas stream
       return this.staticCanvas.captureStream(fps);
   }
 
@@ -460,7 +390,6 @@ export class VirtualConsole {
   // --- Core Loop ---
 
   public update(inputsP1: ControllerInput, inputsP2: ControllerInput) {
-    // Nostalgist handles its own loop.
     this.state.timestamp = Date.now();
   }
 
@@ -468,14 +397,10 @@ export class VirtualConsole {
 
   public render(externalState?: GameState) {
     if (this.isDestroyed) return;
-
-    // If Emulator is running, it handles its own rendering.
     if (this.isRomLoaded && this.nostalgist) return;
 
-    // Otherwise, ensure static canvas is visible and draw fallback UI
     this.staticCanvas.style.display = 'block';
 
-    // Clear
     this.ctx.fillStyle = '#18181b'; 
     this.ctx.fillRect(0, 0, this.width, this.height);
 
@@ -484,43 +409,44 @@ export class VirtualConsole {
       this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
       this.ctx.fillRect(0, 0, this.width, this.height);
       
-      this.ctx.font = '36px monospace'; // Larger font for higher res
+      this.ctx.font = '24px monospace';
       this.ctx.fillStyle = '#a1a1aa';
       this.ctx.textAlign = 'center';
       this.ctx.fillText("NO CARTRIDGE INSERTED", this.width / 2, this.height / 2);
-      this.ctx.font = '24px monospace'; // Larger font
+      this.ctx.font = '16px monospace';
       this.ctx.fillStyle = '#52525b';
-      this.ctx.fillText("Please load a ROM file to begin", this.width / 2, this.height / 2 + 50);
+      this.ctx.fillText("Please load a ROM file to begin", this.width / 2, this.height / 2 + 30);
       this.ctx.textAlign = 'left';
       
-      this.ctx.font = '24px monospace'; // Larger font
+      this.ctx.font = '16px monospace';
       this.ctx.fillStyle = '#52525b';
-      this.ctx.fillText(`SYSTEM: ${this.platform}`, 40, 50);
+      this.ctx.fillText(`SYSTEM: ${this.platform}`, 20, 30);
       return;
     }
   }
 
-  /**
-   * For Guest: Renders the video stream received from Host onto the static canvas.
-   */
   public renderVideo(video: HTMLVideoElement) {
       if (this.isDestroyed) return;
       this.ctx.drawImage(video, 0, 0, this.width, this.height);
       
-      this.ctx.font = '24px monospace';
+      this.ctx.font = '20px monospace';
       this.ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
       this.ctx.textAlign = 'left';
-      this.ctx.fillText(`REMOTE PLAY: ${this.platform}`, 40, 50);
+      this.ctx.fillText(`REMOTE PLAY: ${this.platform}`, 20, 30);
   }
 
   private drawStaticNoise() {
      const id = this.ctx.getImageData(0, 0, this.width, this.height);
      const pixels = id.data;
-     for(let i = 0; i < pixels.length; i += 4) {
+     // Optimization: Skip every 4th pixel update to save CPU
+     for(let i = 0; i < pixels.length; i += 8) {
          const color = Math.random() * 50;
          pixels[i] = color;
          pixels[i+1] = color;
          pixels[i+2] = color;
+         pixels[i+4] = color;
+         pixels[i+5] = color;
+         pixels[i+6] = color;
      }
      this.ctx.putImageData(id, 0, 0);
   }
@@ -543,13 +469,11 @@ export class VirtualConsole {
     this.romName = "No Cartridge Inserted";
     this.isRomLoaded = false;
     
-    // Cleanup existing emulator
     await this.destroyEmulator();
     this.reset();
   }
 
   public async reset() {
-    // If emulator is running, restart it
     if (this.nostalgist && this.isRomLoaded) {
         try {
             await this.nostalgist.restart();
@@ -559,7 +483,6 @@ export class VirtualConsole {
         }
     }
 
-    // Always reset internal state
     this.state.ball = { x: 320, y: 240, dx: 4, dy: 4 };
     this.state.p1.x = 100;
     this.state.p2.x = 500;
