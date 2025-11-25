@@ -138,10 +138,20 @@ export class VirtualConsole {
       });
       
       // Explicitly define legacy properties for Emscripten/SDL compatibility
+      // This is crucial for RetroArch cores running in WASM which often use these properties
       Object.defineProperty(event, 'keyCode', { value: map.keyCode });
       Object.defineProperty(event, 'which', { value: map.keyCode });
 
+      // Dispatch to window (general catch)
       window.dispatchEvent(event);
+      
+      // Also dispatch specifically to the emulator canvas if possible to ensure focus doesn't matter
+      if (this.wrapper) {
+          const canvas = this.wrapper.querySelector('canvas');
+          if (canvas) {
+              canvas.dispatchEvent(event);
+          }
+      }
   }
 
   private createEmptyInput(): ControllerInput {
@@ -221,6 +231,8 @@ export class VirtualConsole {
         canvas.style.display = 'block';
         canvas.style.width = '100%';
         canvas.style.height = '100%';
+        // Ensure canvas can take focus
+        canvas.tabIndex = 0;
         
         this.wrapper.appendChild(canvas);
         this.container.appendChild(this.wrapper);
@@ -231,8 +243,27 @@ export class VirtualConsole {
         }
 
         // Build RetroArch config for P2 Mapping
+        // We use both 'input_player2_btn_x' and 'input_player2_x' for compatibility across cores/versions
         const retroarchConfig: Record<string, string> = {
-            // Map Player 2 buttons to our specific keys
+            // Force Player 2 to be enabled as a controller
+            input_libretro_device_p2: '1',
+            input_player2_analog_dpad_mode: '1',
+            
+            // Modern bindings
+            input_player2_btn_up: P2_MAPPING.up.retroarchKey,
+            input_player2_btn_down: P2_MAPPING.down.retroarchKey,
+            input_player2_btn_left: P2_MAPPING.left.retroarchKey,
+            input_player2_btn_right: P2_MAPPING.right.retroarchKey,
+            input_player2_btn_a: P2_MAPPING.a.retroarchKey,
+            input_player2_btn_b: P2_MAPPING.b.retroarchKey,
+            input_player2_btn_x: P2_MAPPING.x.retroarchKey,
+            input_player2_btn_y: P2_MAPPING.y.retroarchKey,
+            input_player2_btn_start: P2_MAPPING.start.retroarchKey,
+            input_player2_btn_select: P2_MAPPING.select.retroarchKey,
+            input_player2_btn_l: P2_MAPPING.l.retroarchKey,
+            input_player2_btn_r: P2_MAPPING.r.retroarchKey,
+
+            // Legacy bindings (redundancy for safety)
             input_player2_up: P2_MAPPING.up.retroarchKey,
             input_player2_down: P2_MAPPING.down.retroarchKey,
             input_player2_left: P2_MAPPING.left.retroarchKey,
@@ -246,7 +277,7 @@ export class VirtualConsole {
             input_player2_l: P2_MAPPING.l.retroarchKey,
             input_player2_r: P2_MAPPING.r.retroarchKey,
             
-            // Ensure Keyboard driver is active
+            // Ensure Keyboard driver is active and preferred
             input_driver: 'sdl2', 
         };
 
@@ -261,7 +292,7 @@ export class VirtualConsole {
                 height: '100%',
                 backgroundColor: 'transparent',
             },
-            respondToGlobalEvents: true, // Listen to keyboard inputs (both real P1 and synthetic P2)
+            respondToGlobalEvents: true, // Listen to keyboard inputs
         });
 
         if (this.isDestroyed) {
@@ -272,6 +303,11 @@ export class VirtualConsole {
 
         this.isRomLoaded = true;
         this.staticCanvas.style.display = 'none';
+        
+        // Ensure focus is on the window/canvas so inputs register
+        window.focus();
+        canvas.focus();
+        
         console.log("Emulator Launched Successfully with P2 Keyboard Mapping");
 
     } catch (e) {
@@ -354,7 +390,7 @@ export class VirtualConsole {
     }
   }
 
-  public captureStream(fps: number = 60): MediaStream {
+  public captureStream(fps: number = 30): MediaStream {
       if (this.isRomLoaded && this.nostalgist && this.wrapper) {
           const emuCanvas = this.wrapper.querySelector('canvas') as HTMLCanvasElement;
           if (emuCanvas) {
@@ -429,10 +465,14 @@ export class VirtualConsole {
       if (this.isDestroyed) return;
       this.ctx.drawImage(video, 0, 0, this.width, this.height);
       
-      this.ctx.font = '20px monospace';
-      this.ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-      this.ctx.textAlign = 'left';
-      this.ctx.fillText(`REMOTE PLAY: ${this.platform}`, 20, 30);
+      // Only draw the "Remote Play" text if we are NOT playing a game (or haven't synced the name yet)
+      // If we have a valid ROM name other than the default, we assume play has started and hide the text.
+      if (!this.romName || this.romName === "No Cartridge Inserted") {
+          this.ctx.font = '20px monospace';
+          this.ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+          this.ctx.textAlign = 'left';
+          this.ctx.fillText(`REMOTE PLAY: ${this.platform}`, 20, 30);
+      }
   }
 
   private drawStaticNoise() {

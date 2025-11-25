@@ -179,8 +179,8 @@ const App: React.FC = () => {
   const startStreaming = (destId: string) => {
       if (!peerRef.current || !consoleRef.current) return;
       try {
-          // Increase capture FPS to 60 for smoother playback
-          const stream = consoleRef.current.captureStream(60);
+          // 30 FPS for reliable, smooth streaming without jitter (Best setting for P2P)
+          const stream = consoleRef.current.captureStream(30);
           currentStream.current = stream;
           peerRef.current.call(destId, stream);
           console.log("Started streaming to", destId);
@@ -211,6 +211,8 @@ const App: React.FC = () => {
             break;
         case 'ROM_LOAD':
             setRomName(msg.payload.name);
+            // Sync the name to the Guest's VirtualConsole so the "Remote Play" text can be hidden
+            consoleRef.current.romName = msg.payload.name;
             showNotification(`Loaded Game: ${msg.payload.name}`);
             break;
     }
