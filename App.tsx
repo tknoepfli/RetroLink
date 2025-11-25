@@ -190,7 +190,7 @@ const App: React.FC = () => {
     switch (msg.type) {
         case 'INPUT':
             if (roleRef.current === ConnectionRole.HOST) {
-               // Store input logic if needed
+               consoleRef.current.updateGuestInput(msg.payload);
             }
             break;
         case 'STATE_UPDATE':

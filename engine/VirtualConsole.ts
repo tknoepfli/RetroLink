@@ -24,11 +24,16 @@ export class VirtualConsole {
   private isDestroyed: boolean = false;
   private wrapper: HTMLElement | null = null;
   
+  // Remote Input Handling
+  public static instance: VirtualConsole | null = null;
+  private guestInput: ControllerInput | null = null;
+
   // Simulation constants
   private width = 640;
   private height = 480;
 
   constructor(container: HTMLDivElement, isHost: boolean, audio: AudioService) {
+    VirtualConsole.instance = this;
     this.container = container;
     this.isHost = isHost;
     this.audio = audio;
@@ -49,6 +54,9 @@ export class VirtualConsole {
 
     // Ensure we start clean
     this.staticCanvas.style.display = 'block';
+
+    // Patch Gamepad API to support remote P2
+    this.patchGamepadAPI();
     
     // Initial State (used for fallback/waiting screen)
     this.state = {
@@ -56,6 +64,92 @@ export class VirtualConsole {
       p2: this.createPlayer('p2', '#3b82f6', 500, 200),
       ball: { x: 320, y: 240, dx: 4, dy: 4 },
       timestamp: Date.now()
+    };
+  }
+
+  /**
+   * Updates the virtual input state for the remote player (Guest).
+   * This is used by the Host to feed P2 inputs into the emulator.
+   */
+  public updateGuestInput(input: ControllerInput) {
+      this.guestInput = input;
+  }
+
+  /**
+   * Monkey-patches navigator.getGamepads to inject a virtual controller for Player 2.
+   * Emulators typically poll this API every frame.
+   */
+  private patchGamepadAPI() {
+    if (typeof navigator === 'undefined') return;
+    if ((navigator as any).__gamepadsPatched) return;
+
+    const originalGetGamepads = navigator.getGamepads.bind(navigator);
+    (navigator as any).__gamepadsPatched = true;
+
+    // We replace the global function, but it needs to access the *current* VirtualConsole instance
+    // to get the latest guestInput.
+    navigator.getGamepads = () => {
+        const gamepads = originalGetGamepads();
+        const instance = VirtualConsole.instance;
+
+        // If we are Host and have valid guest input, inject it as Controller #2 (Index 1)
+        if (instance && instance.isHost && instance.guestInput) {
+            // Convert GamepadList to Array
+            const list: any[] = Array.from(gamepads);
+            
+            // Ensure array has at least 2 slots (Index 0 for Host, Index 1 for Guest)
+            while (list.length < 2) list.push(null);
+
+            // Create Virtual Gamepad object matching standard mapping
+            // We force this into index 1
+            list[1] = instance.createVirtualGamepad(instance.guestInput);
+            
+            return list;
+        }
+
+        return gamepads;
+    };
+  }
+
+  private createVirtualGamepad(input: ControllerInput): any {
+    // Map ControllerInput to Standard Gamepad Layout
+    // 0:B, 1:A, 2:Y, 3:X, 4:L, 5:R, 8:Sel, 9:Sta, 12:Up, 13:Dn, 14:Lf, 15:Rt
+    
+    // Create Buttons
+    const buttons = [
+        { pressed: input.b, value: input.b ? 1 : 0 },       // 0 (Bottom) -> SNES B
+        { pressed: input.a, value: input.a ? 1 : 0 },       // 1 (Right)  -> SNES A
+        { pressed: input.y || false, value: input.y ? 1 : 0 }, // 2 (Left)   -> SNES Y
+        { pressed: input.x || false, value: input.x ? 1 : 0 }, // 3 (Top)    -> SNES X
+        { pressed: input.l || false, value: input.l ? 1 : 0 }, // 4 (LB)     -> SNES L
+        { pressed: input.r || false, value: input.r ? 1 : 0 }, // 5 (RB)     -> SNES R
+        { pressed: false, value: 0 }, // 6 (LT)
+        { pressed: false, value: 0 }, // 7 (RT)
+        { pressed: input.select, value: input.select ? 1 : 0 }, // 8 (Select)
+        { pressed: input.start, value: input.start ? 1 : 0 },   // 9 (Start)
+        { pressed: false, value: 0 }, // 10 (L3)
+        { pressed: false, value: 0 }, // 11 (R3)
+        { pressed: input.up, value: input.up ? 1 : 0 },       // 12 (D-Up)
+        { pressed: input.down, value: input.down ? 1 : 0 },   // 13 (D-Down)
+        { pressed: input.left, value: input.left ? 1 : 0 },   // 14 (D-Left)
+        { pressed: input.right, value: input.right ? 1 : 0 }, // 15 (D-Right)
+    ];
+
+    // Create Axes (Standard: 0=Left/Right, 1=Up/Down)
+    const axes = [0, 0, 0, 0];
+    if (input.left) axes[0] = -1;
+    if (input.right) axes[0] = 1;
+    if (input.up) axes[1] = -1;
+    if (input.down) axes[1] = 1;
+
+    return {
+        id: 'RetroLink Virtual Controller',
+        index: 1,
+        connected: true,
+        timestamp: performance.now(),
+        mapping: 'standard',
+        axes: axes,
+        buttons: buttons
     };
   }
 
@@ -193,6 +287,9 @@ export class VirtualConsole {
 
   public async destroy() {
     this.isDestroyed = true;
+    if (VirtualConsole.instance === this) {
+        VirtualConsole.instance = null;
+    }
     await this.destroyEmulator();
   }
 
