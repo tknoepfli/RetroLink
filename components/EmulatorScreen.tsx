@@ -17,7 +17,7 @@ export const EmulatorScreen: React.FC<EmulatorScreenProps> = ({ onScreenReady, e
   return (
     <div 
       ref={containerRef}
-      className={`relative w-full aspect-[4/3] bg-black rounded-lg overflow-hidden border border-zinc-800 shadow-2xl ${enableCRT ? 'screen-glow' : ''}`}
+      className={`relative w-full h-full bg-black rounded-lg overflow-hidden border border-zinc-800 shadow-2xl ${enableCRT ? 'screen-glow' : ''}`}
     >
       {/* Static/Noise Canvas - Default background */}
       <canvas 

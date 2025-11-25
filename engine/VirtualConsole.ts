@@ -27,10 +27,12 @@ export class VirtualConsole {
   // Remote Input Handling
   public static instance: VirtualConsole | null = null;
   private guestInput: ControllerInput | null = null;
+  private hasConnectedGuest: boolean = false;
 
   // Simulation constants
-  private width = 640;
-  private height = 480;
+  // doubled resolution for better stream quality
+  private width = 1280; 
+  private height = 960;
 
   constructor(container: HTMLDivElement, isHost: boolean, audio: AudioService) {
     VirtualConsole.instance = this;
@@ -73,6 +75,38 @@ export class VirtualConsole {
    */
   public updateGuestInput(input: ControllerInput) {
       this.guestInput = input;
+      
+      // Fire connection event ONCE when we first receive data.
+      // Emulators often need this event to start polling.
+      if (!this.hasConnectedGuest) {
+          this.hasConnectedGuest = true;
+          this.triggerGamepadEvent();
+      }
+  }
+
+  /**
+   * Manually dispatches a 'gamepadconnected' event to wake up the emulator's input driver.
+   */
+  private triggerGamepadEvent() {
+      if (typeof window === 'undefined' || typeof GamepadEvent === 'undefined') return;
+      
+      console.log("Dispatching virtual gamepad connection event for Player 2");
+      
+      // Create a snapshot of the virtual gamepad
+      const gp = this.createVirtualGamepad(this.guestInput || this.createEmptyInput());
+      
+      try {
+        const event = new GamepadEvent('gamepadconnected', {
+            gamepad: gp
+        });
+        window.dispatchEvent(event);
+      } catch (e) {
+        console.warn("Could not dispatch GamepadEvent", e);
+      }
+  }
+
+  private createEmptyInput(): ControllerInput {
+      return { up: false, down: false, left: false, right: false, a: false, b: false, start: false, select: false };
   }
 
   /**
@@ -92,16 +126,32 @@ export class VirtualConsole {
         const gamepads = originalGetGamepads();
         const instance = VirtualConsole.instance;
 
-        // If we are Host and have valid guest input, inject it as Controller #2 (Index 1)
-        if (instance && instance.isHost && instance.guestInput) {
+        // Only intervene if we are Host and have a connected guest
+        if (instance && instance.isHost && instance.hasConnectedGuest && instance.guestInput) {
             // Convert GamepadList to Array
             const list: any[] = Array.from(gamepads);
             
-            // Ensure array has at least 2 slots (Index 0 for Host, Index 1 for Guest)
-            while (list.length < 2) list.push(null);
+            // LOGIC: Ensure P2 is always at Index 1.
+            
+            // If Index 0 is empty (Host has no physical gamepad), we MUST inject a dummy 
+            // controller at Index 0. Otherwise, RetroArch will see our Virtual P2 (at Index 1) 
+            // as the "First Available Controller" and assign it to Player 1.
+            if (!list[0]) {
+                list[0] = {
+                    id: 'RetroLink Dummy Host Controller',
+                    index: 0,
+                    connected: true,
+                    timestamp: performance.now(),
+                    mapping: 'standard',
+                    axes: [0, 0, 0, 0],
+                    buttons: Array(17).fill({ pressed: false, value: 0 })
+                };
+            }
 
-            // Create Virtual Gamepad object matching standard mapping
-            // We force this into index 1
+            // Ensure slot 1 exists
+            if (list.length < 2) list.push(null);
+
+            // Inject Guest Input at Index 1 (Player 2)
             list[1] = instance.createVirtualGamepad(instance.guestInput);
             
             return list;
@@ -133,6 +183,7 @@ export class VirtualConsole {
         { pressed: input.down, value: input.down ? 1 : 0 },   // 13 (D-Down)
         { pressed: input.left, value: input.left ? 1 : 0 },   // 14 (D-Left)
         { pressed: input.right, value: input.right ? 1 : 0 }, // 15 (D-Right)
+        { pressed: false, value: 0 }, // 16 (Home)
     ];
 
     // Create Axes (Standard: 0=Left/Right, 1=Up/Down)
@@ -143,10 +194,10 @@ export class VirtualConsole {
     if (input.down) axes[1] = 1;
 
     return {
-        id: 'RetroLink Virtual Controller',
-        index: 1,
+        id: 'RetroLink Virtual Controller P2',
+        index: 1, // Strictly Player 2
         connected: true,
-        timestamp: performance.now(),
+        timestamp: performance.now(), // High-res timestamp is crucial for polling
         mapping: 'standard',
         axes: axes,
         buttons: buttons
@@ -262,6 +313,11 @@ export class VirtualConsole {
         // Hide static screen while playing
         this.staticCanvas.style.display = 'none';
         console.log("Emulator Launched Successfully");
+        
+        // Re-trigger gamepad event if P2 was already waiting
+        if (this.hasConnectedGuest) {
+            this.triggerGamepadEvent();
+        }
 
     } catch (e) {
       console.error("Failed to launch emulator:", e);
@@ -299,6 +355,8 @@ export class VirtualConsole {
   public async stop() {
     this.isRomLoaded = false;
     this.romName = "No Cartridge Inserted";
+    this.guestInput = null; // Clear inputs
+    this.hasConnectedGuest = false;
     await this.destroyEmulator();
     this.render(); // Ensure static screen is drawn immediately
   }
@@ -361,8 +419,9 @@ export class VirtualConsole {
 
   /**
    * Returns a MediaStream from the active canvas.
+   * Defaulted to 60fps for smoother gaming.
    */
-  public captureStream(fps: number = 30): MediaStream {
+  public captureStream(fps: number = 60): MediaStream {
       // If Nostalgist is running, find its canvas within our wrapper
       if (this.isRomLoaded && this.nostalgist && this.wrapper) {
           const emuCanvas = this.wrapper.querySelector('canvas') as HTMLCanvasElement;
@@ -425,18 +484,18 @@ export class VirtualConsole {
       this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
       this.ctx.fillRect(0, 0, this.width, this.height);
       
-      this.ctx.font = '24px monospace';
+      this.ctx.font = '36px monospace'; // Larger font for higher res
       this.ctx.fillStyle = '#a1a1aa';
       this.ctx.textAlign = 'center';
       this.ctx.fillText("NO CARTRIDGE INSERTED", this.width / 2, this.height / 2);
-      this.ctx.font = '14px monospace';
+      this.ctx.font = '24px monospace'; // Larger font
       this.ctx.fillStyle = '#52525b';
-      this.ctx.fillText("Please load a ROM file to begin", this.width / 2, this.height / 2 + 30);
+      this.ctx.fillText("Please load a ROM file to begin", this.width / 2, this.height / 2 + 50);
       this.ctx.textAlign = 'left';
       
-      this.ctx.font = '16px monospace';
+      this.ctx.font = '24px monospace'; // Larger font
       this.ctx.fillStyle = '#52525b';
-      this.ctx.fillText(`SYSTEM: ${this.platform}`, 20, 30);
+      this.ctx.fillText(`SYSTEM: ${this.platform}`, 40, 50);
       return;
     }
   }
@@ -448,10 +507,10 @@ export class VirtualConsole {
       if (this.isDestroyed) return;
       this.ctx.drawImage(video, 0, 0, this.width, this.height);
       
-      this.ctx.font = '16px monospace';
+      this.ctx.font = '24px monospace';
       this.ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
       this.ctx.textAlign = 'left';
-      this.ctx.fillText(`REMOTE PLAY: ${this.platform}`, 20, 30);
+      this.ctx.fillText(`REMOTE PLAY: ${this.platform}`, 40, 50);
   }
 
   private drawStaticNoise() {

@@ -31,6 +31,7 @@ const App: React.FC = () => {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [enableCRT, setEnableCRT] = useState(false);
   const [isGamepadConnected, setIsGamepadConnected] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   
   // Refs for stable access in gameLoop without triggering re-renders/re-creation
   const roleRef = useRef(role);
@@ -42,6 +43,7 @@ const App: React.FC = () => {
   const audioService = useRef<AudioService | null>(null);
   const loopRef = useRef<number>(0);
   const peerRef = useRef<Peer | null>(null);
+  const emulatorWrapperRef = useRef<HTMLDivElement>(null);
   
   // Sync refs with state
   useEffect(() => { roleRef.current = role; }, [role]);
@@ -66,9 +68,11 @@ const App: React.FC = () => {
   // Monitor Gamepad Connection
   useEffect(() => {
     const checkGamepad = () => {
-        const gps = navigator.getGamepads ? navigator.getGamepads() : [];
-        const hasGamepad = Array.from(gps).some(gp => gp !== null);
-        setIsGamepadConnected(hasGamepad);
+        if (typeof navigator !== 'undefined' && navigator.getGamepads) {
+            const gps = navigator.getGamepads();
+            const hasGamepad = Array.from(gps).some(gp => gp !== null);
+            setIsGamepadConnected(hasGamepad);
+        }
     };
 
     window.addEventListener("gamepadconnected", checkGamepad);
@@ -175,7 +179,8 @@ const App: React.FC = () => {
   const startStreaming = (destId: string) => {
       if (!peerRef.current || !consoleRef.current) return;
       try {
-          const stream = consoleRef.current.captureStream(30);
+          // Increase capture FPS to 60 for smoother playback
+          const stream = consoleRef.current.captureStream(60);
           currentStream.current = stream;
           peerRef.current.call(destId, stream);
           console.log("Started streaming to", destId);
@@ -339,7 +344,8 @@ const App: React.FC = () => {
       // This is a safety measure, though refs should handle stability now.
       setTimeout(async () => {
         if (consoleRef.current) {
-            consoleRef.current.setPlatform(detectedPlatform); // Update internal platform of VC
+            // Fix race condition: Ensure platform is switched before loading ROM
+            await consoleRef.current.setPlatform(detectedPlatform);
             await consoleRef.current.loadRom(file);
             
             showNotification(`Loaded ${file.name}`);
@@ -421,6 +427,17 @@ const App: React.FC = () => {
       if (consoleRef.current) consoleRef.current.setVolume(v);
   };
 
+  const toggleFullscreen = () => {
+      const element = emulatorWrapperRef.current;
+      if (!element) return;
+
+      if (!document.fullscreenElement) {
+          element.requestFullscreen().then(() => setIsFullscreen(true)).catch(err => console.error(err));
+      } else {
+          document.exitFullscreen().then(() => setIsFullscreen(false)).catch(err => console.error(err));
+      }
+  };
+
   const showNotification = (msg: string) => {
       setNotification(msg);
       setTimeout(() => setNotification(null), 3000);
@@ -452,7 +469,7 @@ const App: React.FC = () => {
   return (
     <div className="flex flex-col h-screen bg-zinc-950 text-white overflow-hidden">
         {/* Header */}
-        <header className="h-16 border-b border-zinc-800 flex items-center justify-between px-4 lg:px-6 bg-zinc-900/50 backdrop-blur-md z-20">
+        <header className="h-16 border-b border-zinc-800 flex items-center justify-between px-4 lg:px-6 bg-zinc-900/50 backdrop-blur-md z-20 shrink-0">
             <div className="flex items-center gap-4">
                 <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center">
                     <i className="ph ph-game-controller text-white text-lg"></i>
@@ -482,6 +499,15 @@ const App: React.FC = () => {
                     {connRef.current ? 'P2 CONNECTED' : 'WAITING FOR P2'}
                 </div>
 
+                 {/* Fullscreen Toggle */}
+                 <button 
+                    onClick={toggleFullscreen}
+                    className="p-2 hover:bg-zinc-800 text-zinc-400 hover:text-white rounded-lg transition-colors"
+                    title="Toggle Fullscreen"
+                >
+                    <i className={`ph ${isFullscreen ? 'ph-corners-in' : 'ph-corners-out'} text-lg`}></i>
+                </button>
+
                  {/* Settings Toggle (Visible on all screens now) */}
                  <button 
                     onClick={() => setIsSettingsOpen(!isSettingsOpen)}
@@ -502,8 +528,8 @@ const App: React.FC = () => {
 
         {/* Main Content */}
         <div className="flex flex-1 overflow-hidden relative">
-            {/* Game Area */}
-            <main className="flex-1 flex flex-col items-center justify-center bg-black/50 p-4 lg:p-6 relative w-full">
+            {/* Game Area - Make it scrollable for better mobile/small screen support */}
+            <main className="flex-1 overflow-y-auto bg-black/50 p-4 lg:p-6 flex flex-col items-center">
                  {/* Notification Toast */}
                  {notification && (
                     <div className="absolute top-6 left-1/2 -translate-x-1/2 z-50 bg-indigo-600 text-white px-4 py-2 rounded-full shadow-lg text-sm font-medium animate-bounce whitespace-nowrap">
@@ -511,20 +537,26 @@ const App: React.FC = () => {
                     </div>
                 )}
 
-                <div className="w-full max-w-4xl relative">
+                {/* Emulator Container with Dynamic Sizing */}
+                {/* max-w-2xl makes the default window smaller to hide artifacts */}
+                {/* aspect-[4/3] maintains retro ratio, m-auto centers it */}
+                <div 
+                    ref={emulatorWrapperRef} 
+                    className="w-full max-w-2xl aspect-[4/3] relative m-auto shadow-2xl bg-black"
+                >
                    <EmulatorScreen onScreenReady={onScreenReady} enableCRT={enableCRT} />
-                   
-                   <div className="mt-4 flex justify-between items-center text-zinc-500 text-xs font-mono">
-                       <span>CORE: {platform}</span>
-                       <div className="flex gap-4">
-                           <span className={`flex items-center gap-1 ${p1Connected ? 'text-emerald-400' : 'text-zinc-600'}`}>
-                               <i className="ph ph-game-controller"></i> {role === ConnectionRole.HOST ? 'P1' : 'P1 (HOST)'}
-                           </span>
-                           <span className={`flex items-center gap-1 ${p2Connected ? 'text-emerald-400' : 'text-zinc-600'}`}>
-                               <i className="ph ph-game-controller"></i> {role === ConnectionRole.HOST ? 'P2 (GUEST)' : 'P2'}
-                           </span>
-                       </div>
-                   </div>
+                </div>
+
+                <div className="w-full max-w-2xl mt-4 flex justify-between items-center text-zinc-500 text-xs font-mono">
+                    <span>CORE: {platform}</span>
+                    <div className="flex gap-4">
+                        <span className={`flex items-center gap-1 ${p1Connected ? 'text-emerald-400' : 'text-zinc-600'}`}>
+                            <i className="ph ph-game-controller"></i> {role === ConnectionRole.HOST ? 'P1' : 'P1 (HOST)'}
+                        </span>
+                        <span className={`flex items-center gap-1 ${p2Connected ? 'text-emerald-400' : 'text-zinc-600'}`}>
+                            <i className="ph ph-game-controller"></i> {role === ConnectionRole.HOST ? 'P2 (GUEST)' : 'P2'}
+                        </span>
+                    </div>
                 </div>
             </main>
 
